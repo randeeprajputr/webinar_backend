@@ -31,8 +31,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: webinar
-    ports:
-      - "5432:5432"
+    # No host port: only app container needs access (avoids conflict with other apps on EC2)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -43,8 +42,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # No host port: only app container needs access (avoids conflict with other apps on EC2)
     volumes:
       - redis_data:/data
     healthcheck:
