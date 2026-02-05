@@ -19,6 +19,7 @@ services:
       REDIS_DB: "0"
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRE_HOURS: "24"
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://webinar.worldcue.news}
     depends_on:
       postgres:
         condition: service_healthy
