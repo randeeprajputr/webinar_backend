@@ -36,8 +36,8 @@ rsync -avz --delete \
   -e "ssh -i $PEM -o StrictHostKeyChecking=accept-new" \
   "$PROJECT_ROOT/" "$REMOTE_USER@$EC2_HOST:~/aura_webinar/"
 
-echo "Building and starting on EC2 (app + Postgres + Redis)..."
+echo "Building and starting on EC2..."
 ssh -i "$PEM" "$REMOTE_USER@$EC2_HOST" \
-  'cd ~/aura_webinar/backend && docker compose build app && docker compose up -d'
+  'cd ~/aura_webinar && docker compose build app && docker compose up -d'
 
-echo "Done. Backend at http://$EC2_HOST:8080 (Postgres and Redis run on EC2 via Docker)."
+echo "Done. Backend should be at http://$EC2_HOST:8080"

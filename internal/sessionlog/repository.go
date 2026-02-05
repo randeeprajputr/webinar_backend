@@ -45,6 +45,23 @@ func (r *Repository) LogLeave(ctx context.Context, webinarID, userID uuid.UUID, 
 	return err
 }
 
+// WatchTimeAggregates holds sum of watch_seconds and distinct user count for a webinar.
+type WatchTimeAggregates struct {
+	TotalWatchSeconds int64
+	DistinctUsers     int
+}
+
+// GetWatchTimeAggregates returns total watch time and distinct user count from session logs for analytics.
+func (r *Repository) GetWatchTimeAggregates(ctx context.Context, webinarID uuid.UUID) (*WatchTimeAggregates, error) {
+	const q = `SELECT COALESCE(SUM(watch_seconds), 0), COUNT(DISTINCT user_id) FROM user_session_logs WHERE webinar_id = $1 AND left_at IS NOT NULL`
+	var agg WatchTimeAggregates
+	err := r.pool.QueryRow(ctx, q, webinarID).Scan(&agg.TotalWatchSeconds, &agg.DistinctUsers)
+	if err != nil {
+		return nil, err
+	}
+	return &agg, nil
+}
+
 // ListByWebinar returns attendees for a webinar (join time, leave time, watch duration).
 func (r *Repository) ListByWebinar(ctx context.Context, webinarID uuid.UUID) ([]AttendeeRow, error) {
 	rows, err := r.pool.Query(ctx,

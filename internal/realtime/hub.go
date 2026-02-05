@@ -100,6 +100,8 @@ func (h *Hub) Register(c *Client) {
 	if onJoin != nil {
 		onJoin(c.WebinarID, c.UserID)
 	}
+	// Broadcast audience count so speaker/audience screens show correct count immediately when someone joins
+	h.BroadcastToWebinarAndPublish(c.WebinarID, "audience_count", map[string]int{"count": count})
 	h.logger.Debug("client joined webinar", zap.String("client_id", c.ID), zap.String("webinar_id", c.WebinarID.String()))
 }
 
@@ -124,6 +126,12 @@ func (h *Hub) Unregister(c *Client) {
 	h.mu.Unlock()
 	if onAudience != nil && count > 0 {
 		onAudience(c.WebinarID, count)
+	}
+	// Broadcast updated count so all clients see correct viewer count when someone leaves
+	if count > 0 {
+		h.BroadcastToWebinarAndPublish(c.WebinarID, "audience_count", map[string]int{"count": count})
+	} else {
+		h.BroadcastToWebinarAndPublish(c.WebinarID, "audience_count", map[string]int{"count": 0})
 	}
 	if onLeave != nil && !joinedAt.IsZero() {
 		onLeave(c.WebinarID, c.UserID, joinedAt)

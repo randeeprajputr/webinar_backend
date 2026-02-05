@@ -7,6 +7,7 @@ import (
 
 	"github.com/aura-webinar/backend/internal/questions"
 	"github.com/aura-webinar/backend/internal/registrations"
+	"github.com/aura-webinar/backend/internal/sessionlog"
 	"github.com/aura-webinar/backend/internal/streams"
 	"github.com/aura-webinar/backend/internal/webinars"
 	"github.com/aura-webinar/backend/pkg/response"
@@ -19,6 +20,7 @@ type Handler struct {
 	questionRepo     *questions.Repository
 	streamRepo       *streams.Repository
 	webinarRepo      *webinars.Repository
+	sessionLogRepo   *sessionlog.Repository
 }
 
 // NewHandler creates an analytics handler.
@@ -28,6 +30,7 @@ func NewHandler(
 	questionRepo *questions.Repository,
 	streamRepo *streams.Repository,
 	webinarRepo *webinars.Repository,
+	sessionLogRepo *sessionlog.Repository,
 ) *Handler {
 	return &Handler{
 		pool:             pool,
@@ -35,6 +38,7 @@ func NewHandler(
 		questionRepo:     questionRepo,
 		streamRepo:       streamRepo,
 		webinarRepo:      webinarRepo,
+		sessionLogRepo:   sessionLogRepo,
 	}
 }
 
@@ -91,9 +95,11 @@ func (h *Handler) GetByWebinar(c *gin.Context) {
 		return
 	}
 
+	// Avg watch time from user_session_logs (stream_sessions total_watch_time/total_viewers are not updated on leave)
 	var avgWatchSeconds int64
-	if agg.TotalViewers > 0 {
-		avgWatchSeconds = agg.TotalWatchTime / int64(agg.TotalViewers)
+	watchAgg, err := h.sessionLogRepo.GetWatchTimeAggregates(ctx, id)
+	if err == nil && watchAgg != nil && watchAgg.DistinctUsers > 0 {
+		avgWatchSeconds = watchAgg.TotalWatchSeconds / int64(watchAgg.DistinctUsers)
 	}
 
 	// Poll participation: distinct users who answered any poll for this webinar

@@ -149,16 +149,29 @@ func main() {
 		}
 	})
 
-	// Attendee list (join/leave session logs)
+	// Attendee list (join/leave session logs) and mark registration as attended when user joins livestream
 	sessionLogRepo := sessionlog.NewRepository(pool)
 	sessionLogHandler := sessionlog.NewHandler(sessionLogRepo)
 	hub.SetSessionLogger(
-		func(webinarID, userID uuid.UUID) { _ = sessionLogRepo.LogJoin(context.Background(), webinarID, userID) },
+		func(webinarID, userID uuid.UUID) {
+			ctx := context.Background()
+			_ = sessionLogRepo.LogJoin(ctx, webinarID, userID)
+			// Mark registration as attended so analytics "Attended" count is correct
+			u, err := authRepo.GetByID(ctx, userID)
+			if err != nil || u == nil {
+				return
+			}
+			reg, err := registrationRepo.GetRegistrationByWebinarAndEmail(ctx, webinarID, u.Email)
+			if err != nil || reg == nil {
+				return
+			}
+			_ = registrationRepo.MarkAttended(ctx, reg.ID)
+		},
 		func(webinarID, userID uuid.UUID, joinedAt time.Time) { _ = sessionLogRepo.LogLeave(context.Background(), webinarID, userID, joinedAt) },
 	)
 
 	// Analytics (admin or webinar org access)
-	analyticsHandler := analytics.NewHandler(pool, registrationRepo, questionRepo, streamRepo, webinarRepo)
+	analyticsHandler := analytics.NewHandler(pool, registrationRepo, questionRepo, streamRepo, webinarRepo, sessionLogRepo)
 
 	emailLogsRepo := emaillogs.NewRepository(pool)
 	emailLogsHandler := emaillogs.NewHandler(emailLogsRepo)
