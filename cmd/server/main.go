@@ -27,6 +27,7 @@ import (
 	"github.com/aura-webinar/backend/internal/recorder"
 	"github.com/aura-webinar/backend/internal/realtime"
 	"github.com/aura-webinar/backend/internal/recordings"
+	"github.com/aura-webinar/backend/internal/sessionlog"
 	"github.com/aura-webinar/backend/internal/registrations"
 	"github.com/aura-webinar/backend/internal/streams"
 	"github.com/aura-webinar/backend/internal/webinars"
@@ -148,6 +149,14 @@ func main() {
 		}
 	})
 
+	// Attendee list (join/leave session logs)
+	sessionLogRepo := sessionlog.NewRepository(pool)
+	sessionLogHandler := sessionlog.NewHandler(sessionLogRepo)
+	hub.SetSessionLogger(
+		func(webinarID, userID uuid.UUID) { _ = sessionLogRepo.LogJoin(context.Background(), webinarID, userID) },
+		func(webinarID, userID uuid.UUID, joinedAt time.Time) { _ = sessionLogRepo.LogLeave(context.Background(), webinarID, userID, joinedAt) },
+	)
+
 	// Analytics (admin or webinar org access)
 	analyticsHandler := analytics.NewHandler(pool, registrationRepo, questionRepo, streamRepo, webinarRepo)
 
@@ -205,10 +214,14 @@ func main() {
 		api.DELETE("/webinars/:id", webinarHandler.Delete)
 		api.POST("/webinars/:id/speakers", middleware.RequireRole("admin", "speaker"), webinarHandler.AddSpeaker)
 		api.GET("/webinars/:id/audience_count", webinarHandler.AudienceCount(hub))
+		api.GET("/webinars/:id/attendees", middleware.RequireRole("admin", "speaker"), sessionLogHandler.GetAttendees)
 
 		// Questions
 		api.POST("/webinars/:id/questions", questionHandler.Create)
+		api.GET("/webinars/:id/questions", middleware.RequireRole("admin", "speaker"), questionHandler.ListByWebinar)
 		api.PATCH("/questions/:id/approve", middleware.RequireRole("admin", "speaker"), questionHandler.Approve)
+		api.PATCH("/questions/:id/answer", middleware.RequireRole("admin", "speaker"), questionHandler.Answer)
+		api.POST("/questions/:id/upvote", questionHandler.Upvote)
 
 		// Polls
 		api.POST("/webinars/:id/polls", middleware.RequireRole("admin", "speaker"), pollHandler.Create)

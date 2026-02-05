@@ -3,6 +3,7 @@ package realtime
 import (
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,17 +18,24 @@ const (
 // AudienceChangeHandler is called when audience count changes for a webinar (e.g. for peak tracking).
 type AudienceChangeHandler func(webinarID uuid.UUID, count int)
 
+// SessionLogJoin is called when a client joins (for attendee list / join time).
+type SessionLogJoin func(webinarID, userID uuid.UUID)
+
+// SessionLogLeave is called when a client leaves (update left_at, watch_seconds).
+type SessionLogLeave func(webinarID, userID uuid.UUID, joinedAt time.Time)
+
 // Hub maintains webinar_id -> set of connections and broadcasts messages.
 // Uses Redis pub/sub for horizontal scaling: local broadcast + publish to Redis.
 type Hub struct {
-	// webinarID -> map[clientID]*Client
-	webinars    map[uuid.UUID]map[string]*Client
-	subs        map[uuid.UUID]func() // cancel Redis subscription per webinar
-	mu          sync.RWMutex
-	logger      *zap.Logger
-	redis       RedisPublisher
-	redisSub    RedisSubscriber
-	onAudience  AudienceChangeHandler
+	webinars       map[uuid.UUID]map[string]*Client
+	subs           map[uuid.UUID]func()
+	mu             sync.RWMutex
+	logger         *zap.Logger
+	redis          RedisPublisher
+	redisSub       RedisSubscriber
+	onAudience     AudienceChangeHandler
+	onSessionJoin  SessionLogJoin
+	onSessionLeave SessionLogLeave
 }
 
 // RedisPublisher is the interface for publishing to Redis (for cross-instance broadcast).
@@ -59,6 +67,14 @@ func (h *Hub) SetAudienceChangeHandler(fn AudienceChangeHandler) {
 	h.onAudience = fn
 }
 
+// SetSessionLogger sets callbacks for join/leave (attendee list + join time).
+func (h *Hub) SetSessionLogger(onJoin SessionLogJoin, onLeave SessionLogLeave) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onSessionJoin = onJoin
+	h.onSessionLeave = onLeave
+}
+
 // Register adds a client to a webinar room. Starts Redis subscription for this webinar if first client.
 func (h *Hub) Register(c *Client) {
 	h.mu.Lock()
@@ -76,9 +92,13 @@ func (h *Hub) Register(c *Client) {
 	h.webinars[c.WebinarID][c.ID] = c
 	count := len(h.webinars[c.WebinarID])
 	onAudience := h.onAudience
+	onJoin := h.onSessionJoin
 	h.mu.Unlock()
 	if onAudience != nil {
 		onAudience(c.WebinarID, count)
+	}
+	if onJoin != nil {
+		onJoin(c.WebinarID, c.UserID)
 	}
 	h.logger.Debug("client joined webinar", zap.String("client_id", c.ID), zap.String("webinar_id", c.WebinarID.String()))
 }
@@ -87,6 +107,8 @@ func (h *Hub) Register(c *Client) {
 func (h *Hub) Unregister(c *Client) {
 	h.mu.Lock()
 	var count int
+	onLeave := h.onSessionLeave
+	joinedAt := c.JoinedAt
 	if m, ok := h.webinars[c.WebinarID]; ok {
 		delete(m, c.ID)
 		count = len(m)
@@ -102,6 +124,9 @@ func (h *Hub) Unregister(c *Client) {
 	h.mu.Unlock()
 	if onAudience != nil && count > 0 {
 		onAudience(c.WebinarID, count)
+	}
+	if onLeave != nil && !joinedAt.IsZero() {
+		onLeave(c.WebinarID, c.UserID, joinedAt)
 	}
 	h.logger.Debug("client left webinar", zap.String("client_id", c.ID), zap.String("webinar_id", c.WebinarID.String()))
 }

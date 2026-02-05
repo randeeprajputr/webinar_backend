@@ -26,6 +26,21 @@ func NewHandler(repo *Repository, hub *realtime.Hub) *Handler {
 	return &Handler{repo: repo, hub: hub}
 }
 
+// ListByWebinar handles GET /webinars/:id/questions (admin/speaker list with votes/answered).
+func (h *Handler) ListByWebinar(c *gin.Context) {
+	webinarID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "invalid webinar id")
+		return
+	}
+	list, err := h.repo.ListByWebinar(c.Request.Context(), webinarID)
+	if err != nil {
+		response.Internal(c, "failed to list questions")
+		return
+	}
+	response.OK(c, gin.H{"questions": list})
+}
+
 // Create handles POST /webinars/:id/questions (audience asks question).
 func (h *Handler) Create(c *gin.Context) {
 	webinarID, err := uuid.Parse(c.Param("id"))
@@ -51,9 +66,9 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	// Broadcast via Redis only so all clients (including this instance) get it once (no duplicate delivery).
+	// Broadcast via Redis only so all clients get it once.
 	h.hub.PublishToWebinarOnly(webinarID, "ask_question", map[string]interface{}{
-		"id": q.ID, "webinar_id": webinarID, "user_id": userID, "content": q.Content, "approved": false,
+		"id": q.ID, "webinar_id": webinarID, "user_id": userID, "content": q.Content, "approved": false, "answered": false, "votes": 0,
 	})
 	response.Created(c, q)
 }
@@ -77,7 +92,57 @@ func (h *Handler) Approve(c *gin.Context) {
 	}
 
 	h.hub.PublishToWebinarOnly(q.WebinarID, "approve_question", map[string]interface{}{
-		"id": q.ID, "approved": true,
+		"id": q.ID, "approved": true, "answered": q.Answered, "votes": q.Votes,
 	})
 	response.OK(c, gin.H{"id": q.ID, "approved": true})
+}
+
+// Answer handles PATCH /questions/:id/answer (speaker/admin marks question as answered).
+func (h *Handler) Answer(c *gin.Context) {
+	questionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "invalid question id")
+		return
+	}
+
+	q, err := h.repo.GetByID(c.Request.Context(), questionID)
+	if err != nil {
+		response.NotFound(c, "question not found")
+		return
+	}
+	if err := h.repo.MarkAnswered(c.Request.Context(), questionID); err != nil {
+		response.Internal(c, "failed to mark question answered")
+		return
+	}
+
+	h.hub.PublishToWebinarOnly(q.WebinarID, "question_answered", map[string]interface{}{
+		"id": q.ID, "answered": true,
+	})
+	response.OK(c, gin.H{"id": q.ID, "answered": true})
+}
+
+// Upvote handles POST /questions/:id/upvote (audience upvotes a question; one per user).
+func (h *Handler) Upvote(c *gin.Context) {
+	questionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "invalid question id")
+		return
+	}
+	userID := c.MustGet(middleware.ContextUserID).(uuid.UUID)
+
+	q, err := h.repo.GetByID(c.Request.Context(), questionID)
+	if err != nil {
+		response.NotFound(c, "question not found")
+		return
+	}
+	votes, err := h.repo.Upvote(c.Request.Context(), questionID, userID)
+	if err != nil {
+		response.Internal(c, "failed to upvote question")
+		return
+	}
+
+	h.hub.PublishToWebinarOnly(q.WebinarID, "question_votes", map[string]interface{}{
+		"id": q.ID, "votes": votes,
+	})
+	response.OK(c, gin.H{"id": q.ID, "votes": votes})
 }

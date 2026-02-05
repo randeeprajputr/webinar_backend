@@ -32,6 +32,7 @@ type Client struct {
 	WebinarID uuid.UUID
 	UserID    uuid.UUID
 	Role      string
+	JoinedAt  time.Time // set on Register for session log
 	hub       *Hub
 	sfu       *SFU
 	conn      *websocket.Conn
@@ -71,6 +72,7 @@ func ServeWs(hub *Hub, logger *zap.Logger, jwtValidate func(token string) (userI
 			WebinarID: webinarID,
 			UserID:    userID,
 			Role:      role,
+			JoinedAt:  time.Now(),
 			hub:       hub,
 			sfu:       sfu,
 			conn:      conn,

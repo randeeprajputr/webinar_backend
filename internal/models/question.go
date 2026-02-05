@@ -13,5 +13,7 @@ type Question struct {
 	UserID    uuid.UUID `json:"user_id"`
 	Content   string    `json:"content"`
 	Approved  bool      `json:"approved"`
+	Answered  bool      `json:"answered"`
+	Votes     int       `json:"votes"`
 	CreatedAt time.Time `json:"created_at"`
 }
