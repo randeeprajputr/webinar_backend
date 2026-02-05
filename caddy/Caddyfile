@@ -1,0 +1,7 @@
+# webinar-backend.worldcue.news
+# Caddy will obtain and renew a TLS certificate automatically (Let's Encrypt).
+# Backend runs on host port 8081 (docker compose).
+
+webinar-backend.worldcue.news {
+    reverse_proxy localhost:8081
+}
