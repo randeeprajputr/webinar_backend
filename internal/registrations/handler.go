@@ -3,6 +3,7 @@ package registrations
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,8 +17,9 @@ import (
 
 // RegisterRequest is the body for POST /webinars/:id/register.
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	FullName string `json:"full_name" binding:"required"`
+	Email          string            `json:"email" binding:"required,email"`
+	FullName       string            `json:"full_name" binding:"required"`
+	FormResponses  map[string]string `json:"form_responses,omitempty"` // dynamic fields from audience_form_config
 }
 
 // Handler handles registration HTTP endpoints.
@@ -54,10 +56,20 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	var extraData json.RawMessage
+	if len(req.FormResponses) > 0 {
+		var err error
+		extraData, err = json.Marshal(req.FormResponses)
+		if err != nil {
+			response.BadRequest(c, "invalid form_responses")
+			return
+		}
+	}
 	reg := &models.Registration{
 		WebinarID: webinarID,
 		Email:     req.Email,
 		FullName:  req.FullName,
+		ExtraData: extraData,
 	}
 	if err := h.repo.CreateRegistration(c.Request.Context(), reg); err != nil {
 		h.logger.Error("create registration failed", zap.Error(err), zap.String("webinar_id", webinarID.String()))

@@ -18,9 +18,16 @@ type Config struct {
 	WebRTC    WebRTCConfig
 	AWS       AWSConfig
 	Recording RecordingConfig
+	Zego      ZegoConfig
 	Stripe    StripeConfig
 	Razorpay  RazorpayConfig
 	Email     EmailConfig
+}
+
+// ZegoConfig holds ZEGOCLOUD (live streaming / video) credentials for token generation.
+type ZegoConfig struct {
+	AppID        uint32 // ZEGOCLOUD project App ID
+	ServerSecret string // Server secret; never expose to client
 }
 
 // StripeConfig for global payments.
@@ -159,6 +166,10 @@ func Load() (*Config, error) {
 		},
 		Recording: RecordingConfig{
 			OutputDir: getEnv("RECORDING_OUTPUT_DIR", ""),
+		},
+		Zego: ZegoConfig{
+			AppID:        uint32(getEnvInt("ZEGO_APP_ID", 0)),
+			ServerSecret: getEnv("ZEGO_SERVER_SECRET", ""),
 		},
 		Stripe: StripeConfig{
 			SecretKey:     getEnv("STRIPE_SECRET_KEY", ""),

@@ -13,10 +13,15 @@ import (
 
 // RegisterRequest is the body for POST /auth/register.
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	FullName string `json:"full_name" binding:"required"`
-	Role     string `json:"role"` // optional, defaults to audience
+	Email       string `json:"email" binding:"required,email"`
+	Password    string `json:"password" binding:"required,min=6"`
+	FullName    string `json:"full_name" binding:"required"`
+	Role        string `json:"role"` // optional, defaults to audience
+	Department  string `json:"department"`
+	CompanyName string `json:"company_name"`
+	ContactNo   string `json:"contact_no"`
+	Designation string `json:"designation"`
+	Institution string `json:"institution"`
 }
 
 // LoginRequest is the body for POST /auth/login.
@@ -78,7 +83,14 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.repo.Create(c.Request.Context(), req.Email, hash, req.FullName, role)
+	profile := &CreateUserParams{
+		Department:   req.Department,
+		CompanyName:  req.CompanyName,
+		ContactNo:    req.ContactNo,
+		Designation:  req.Designation,
+		Institution:  req.Institution,
+	}
+	user, err := h.repo.Create(c.Request.Context(), req.Email, hash, req.FullName, role, profile)
 	if err != nil {
 		response.Internal(c, "failed to create user")
 		return

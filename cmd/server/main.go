@@ -32,6 +32,7 @@ import (
 	"github.com/aura-webinar/backend/internal/streams"
 	"github.com/aura-webinar/backend/internal/webinars"
 	"github.com/aura-webinar/backend/internal/worker"
+	"github.com/aura-webinar/backend/internal/zego"
 	"github.com/aura-webinar/backend/pkg/database"
 	"github.com/aura-webinar/backend/pkg/queue"
 	"github.com/aura-webinar/backend/pkg/redis"
@@ -100,6 +101,7 @@ func main() {
 	// Webinars
 	webinarRepo := webinars.NewRepository(pool)
 	webinarHandler := webinars.NewHandler(webinarRepo)
+	zegoHandler := zego.NewHandler(webinarRepo, cfg.Zego, logger)
 
 	// Organizations (Phase 2)
 	orgRepo := organizations.NewRepository(pool)
@@ -224,10 +226,12 @@ func main() {
 		api.GET("/webinars/:id/emails", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), emailLogsHandler.ListByWebinar)
 		api.POST("/webinars/:id/emails/resend", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), emailLogsHandler.Resend)
 		api.PATCH("/webinars/:id", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), webinarHandler.Update)
+		api.PUT("/webinars/:id/registration-form", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), webinarHandler.UpdateRegistrationForm)
 		api.DELETE("/webinars/:id", webinarHandler.Delete)
 		api.POST("/webinars/:id/speakers", middleware.RequireRole("admin", "speaker"), webinarHandler.AddSpeaker)
 		api.GET("/webinars/:id/audience_count", webinarHandler.AudienceCount(hub))
 		api.GET("/webinars/:id/attendees", middleware.RequireRole("admin", "speaker"), sessionLogHandler.GetAttendees)
+		api.GET("/webinars/:id/zego-token", zegoHandler.GetToken)
 
 		// Questions
 		api.POST("/webinars/:id/questions", questionHandler.Create)

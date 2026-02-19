@@ -31,10 +31,10 @@ func (r *Repository) Create(ctx context.Context, w *models.Webinar) error {
 
 // GetByID returns a webinar by ID.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Webinar, error) {
-	const q = `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, created_at, updated_at
+	const q = `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, audience_form_config, created_at, updated_at
 		FROM webinars WHERE id = $1`
 	var w models.Webinar
-	err := r.pool.QueryRow(ctx, q, id).Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, id).Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.AudienceFormConfig, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +83,39 @@ func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizatio
 	return list, rows.Err()
 }
 
+// ListBySpeakerID returns webinars where the user is added as a speaker (for speaker dashboard).
+func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]models.Webinar, error) {
+	const q = `SELECT w.id, w.title, w.description, w.starts_at, w.ends_at, w.created_by, w.organization_id, w.is_paid, w.ticket_price_cents, w.ticket_currency, w.created_at, w.updated_at
+		FROM webinars w
+		INNER JOIN webinar_speakers ws ON ws.webinar_id = w.id AND ws.user_id = $1
+		ORDER BY w.starts_at DESC`
+	rows, err := r.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []models.Webinar
+	for rows.Next() {
+		var w models.Webinar
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, w)
+	}
+	return list, rows.Err()
+}
+
 // Update updates webinar fields (title, description, starts_at, ends_at).
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, title, description string, startsAt, endsAt *time.Time) error {
 	const q = `UPDATE webinars SET title = $1, description = $2, starts_at = COALESCE($3, starts_at), ends_at = COALESCE($4, ends_at), updated_at = NOW() WHERE id = $5`
 	_, err := r.pool.Exec(ctx, q, title, description, startsAt, endsAt, id)
+	return err
+}
+
+// UpdateAudienceFormConfig sets the audience registration form config (admin-defined fields).
+func (r *Repository) UpdateAudienceFormConfig(ctx context.Context, id uuid.UUID, config []byte) error {
+	const q = `UPDATE webinars SET audience_form_config = $1::jsonb, updated_at = NOW() WHERE id = $2`
+	_, err := r.pool.Exec(ctx, q, string(config), id)
 	return err
 }
 

@@ -21,19 +21,19 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 // CreateRegistration inserts a registration (unique per webinar+email).
 func (r *Repository) CreateRegistration(ctx context.Context, reg *models.Registration) error {
-	const q = `INSERT INTO registrations (id, webinar_id, email, full_name)
-		VALUES (gen_random_uuid(), $1, $2, $3)
-		ON CONFLICT (webinar_id, email) DO UPDATE SET full_name = EXCLUDED.full_name, updated_at = NOW()
+	const q = `INSERT INTO registrations (id, webinar_id, email, full_name, extra_data)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4)
+		ON CONFLICT (webinar_id, email) DO UPDATE SET full_name = EXCLUDED.full_name, extra_data = EXCLUDED.extra_data, updated_at = NOW()
 		RETURNING id, attended_at, created_at, updated_at`
-	return r.pool.QueryRow(ctx, q, reg.WebinarID, reg.Email, reg.FullName).
+	return r.pool.QueryRow(ctx, q, reg.WebinarID, reg.Email, reg.FullName, reg.ExtraData).
 		Scan(&reg.ID, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt)
 }
 
 // GetRegistrationByID returns a registration by ID.
 func (r *Repository) GetRegistrationByID(ctx context.Context, id uuid.UUID) (*models.Registration, error) {
-	const q = `SELECT id, webinar_id, email, full_name, attended_at, created_at, updated_at FROM registrations WHERE id = $1`
+	const q = `SELECT id, webinar_id, email, full_name, extra_data, attended_at, created_at, updated_at FROM registrations WHERE id = $1`
 	var reg models.Registration
-	err := r.pool.QueryRow(ctx, q, id).Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, id).Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.ExtraData, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -42,9 +42,9 @@ func (r *Repository) GetRegistrationByID(ctx context.Context, id uuid.UUID) (*mo
 
 // GetRegistrationByWebinarAndEmail returns the registration for webinar+email.
 func (r *Repository) GetRegistrationByWebinarAndEmail(ctx context.Context, webinarID uuid.UUID, email string) (*models.Registration, error) {
-	const q = `SELECT id, webinar_id, email, full_name, attended_at, created_at, updated_at FROM registrations WHERE webinar_id = $1 AND email = $2`
+	const q = `SELECT id, webinar_id, email, full_name, extra_data, attended_at, created_at, updated_at FROM registrations WHERE webinar_id = $1 AND email = $2`
 	var reg models.Registration
-	err := r.pool.QueryRow(ctx, q, webinarID, email).Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, webinarID, email).Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.ExtraData, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (r *Repository) GetRegistrationByWebinarAndEmail(ctx context.Context, webin
 
 // ListByWebinar returns all registrations for a webinar.
 func (r *Repository) ListByWebinar(ctx context.Context, webinarID uuid.UUID) ([]models.Registration, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id, webinar_id, email, full_name, attended_at, created_at, updated_at FROM registrations WHERE webinar_id = $1 ORDER BY created_at DESC`, webinarID)
+	rows, err := r.pool.Query(ctx, `SELECT id, webinar_id, email, full_name, extra_data, attended_at, created_at, updated_at FROM registrations WHERE webinar_id = $1 ORDER BY created_at DESC`, webinarID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (r *Repository) ListByWebinar(ctx context.Context, webinarID uuid.UUID) ([]
 	var list []models.Registration
 	for rows.Next() {
 		var reg models.Registration
-		if err := rows.Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt); err != nil {
+		if err := rows.Scan(&reg.ID, &reg.WebinarID, &reg.Email, &reg.FullName, &reg.ExtraData, &reg.AttendedAt, &reg.CreatedAt, &reg.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, reg)

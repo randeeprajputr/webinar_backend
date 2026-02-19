@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -8,13 +9,14 @@ import (
 
 // Registration is an attendee registration for a webinar.
 type Registration struct {
-	ID         uuid.UUID  `json:"id"`
-	WebinarID  uuid.UUID  `json:"webinar_id"`
-	Email      string     `json:"email"`
-	FullName   string     `json:"full_name"`
-	AttendedAt *time.Time `json:"attended_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID         uuid.UUID       `json:"id"`
+	WebinarID  uuid.UUID       `json:"webinar_id"`
+	Email      string          `json:"email"`
+	FullName   string          `json:"full_name"`
+	ExtraData  json.RawMessage `json:"extra_data,omitempty"`
+	AttendedAt *time.Time      `json:"attended_at,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 // RegistrationToken is a unique join link token for a registration.

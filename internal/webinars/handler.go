@@ -1,6 +1,7 @@
 package webinars
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,11 @@ type CreateRequest struct {
 // AddSpeakerRequest is the body for POST /webinars/:id/speakers.
 type AddSpeakerRequest struct {
 	UserID string `json:"user_id" binding:"required,uuid"`
+}
+
+// UpdateRegistrationFormRequest is the body for PUT /webinars/:id/registration-form.
+type UpdateRegistrationFormRequest struct {
+	AudienceFormConfig []models.FormFieldConfig `json:"audience_form_config"`
 }
 
 // Handler handles webinar HTTP endpoints.
@@ -134,12 +140,23 @@ func (h *Handler) AddSpeaker(c *gin.Context) {
 	response.Created(c, gin.H{"webinar_id": webinarID, "user_id": speakerID})
 }
 
-// List handles GET /webinars. Query ?mine=1 returns only webinars created by the current user.
+// List handles GET /webinars.
+// Query ?mine=1: only webinars created by the current user (admin dashboard).
+// Query ?as_speaker=1: only webinars where the current user is a speaker (speaker dashboard).
 func (h *Handler) List(c *gin.Context) {
+	userID := c.MustGet(middleware.ContextUserID).(uuid.UUID)
+	if c.Query("as_speaker") == "1" {
+		list, err := h.repo.ListBySpeakerID(c.Request.Context(), userID)
+		if err != nil {
+			response.Internal(c, "failed to list webinars")
+			return
+		}
+		response.OK(c, list)
+		return
+	}
 	var createdBy *uuid.UUID
 	if c.Query("mine") == "1" {
-		uid := c.MustGet(middleware.ContextUserID).(uuid.UUID)
-		createdBy = &uid
+		createdBy = &userID
 	}
 	list, err := h.repo.List(c.Request.Context(), createdBy, nil)
 	if err != nil {
@@ -202,6 +219,41 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	if err := h.repo.Update(c.Request.Context(), id, title, desc, startsAt, endsAt); err != nil {
 		response.Internal(c, "failed to update webinar")
+		return
+	}
+	updated, _ := h.repo.GetByID(c.Request.Context(), id)
+	response.OK(c, updated)
+}
+
+// UpdateRegistrationForm handles PUT /webinars/:id/registration-form (admin/creator).
+func (h *Handler) UpdateRegistrationForm(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "invalid webinar id")
+		return
+	}
+	userID := c.MustGet(middleware.ContextUserID).(uuid.UUID)
+	w, err := h.repo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "webinar not found")
+		return
+	}
+	if w.CreatedBy != userID {
+		response.Forbidden(c, "only the creator can update the registration form")
+		return
+	}
+	var req UpdateRegistrationFormRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request: "+err.Error())
+		return
+	}
+	config, err := json.Marshal(req.AudienceFormConfig)
+	if err != nil {
+		response.Internal(c, "failed to save form config")
+		return
+	}
+	if err := h.repo.UpdateAudienceFormConfig(c.Request.Context(), id, config); err != nil {
+		response.Internal(c, "failed to update registration form")
 		return
 	}
 	updated, _ := h.repo.GetByID(c.Request.Context(), id)
