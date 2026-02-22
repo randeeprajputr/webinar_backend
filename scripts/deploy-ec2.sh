@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Deploy backend to EC2 using editorial-go.pem.
+# Syncs backend to ~/webinar_backend on the server and runs docker compose there.
 # Run from project root: ./backend/scripts/deploy-ec2.sh <EC2_IP> [ubuntu|ec2-user]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$BACKEND_DIR/.." && pwd)"
 PEM="$BACKEND_DIR/editorial-go.pem"
+REMOTE_DIR="webinar_backend"
 
 if [ -z "$1" ]; then
   echo "Usage: $0 <EC2_HOST_OR_IP> [ubuntu|ec2-user]"
@@ -25,19 +26,15 @@ fi
 
 chmod -f 400 "$PEM" 2>/dev/null || true
 
-echo "Deploying to $REMOTE_USER@$EC2_HOST (project root: $PROJECT_ROOT)"
-echo "Syncing project..."
+echo "Deploying backend to $REMOTE_USER@$EC2_HOST:~/$REMOTE_DIR/"
+echo "Syncing backend..."
 rsync -avz --delete \
-  --exclude 'node_modules' \
   --exclude '.git' \
-  --exclude 'frontend/.next' \
-  --exclude 'frontend/out' \
-  --exclude '.env*.local' \
   -e "ssh -i $PEM -o StrictHostKeyChecking=accept-new" \
-  "$PROJECT_ROOT/" "$REMOTE_USER@$EC2_HOST:~/aura_webinar/"
+  "$BACKEND_DIR/" "$REMOTE_USER@$EC2_HOST:~/$REMOTE_DIR/"
 
 echo "Building and starting on EC2..."
 ssh -i "$PEM" "$REMOTE_USER@$EC2_HOST" \
-  'cd ~/aura_webinar && docker compose build app && docker compose up -d'
+  "cd ~/$REMOTE_DIR && docker compose build app && docker compose up -d"
 
-echo "Done. Backend should be at http://$EC2_HOST:8080"
+echo "Done. Backend should be at http://$EC2_HOST:8081 (or via nginx)"

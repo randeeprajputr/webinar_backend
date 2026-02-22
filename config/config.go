@@ -133,7 +133,7 @@ func Load() (*Config, error) {
 			Port:               getEnv("PORT", "8080"),
 			ReadTimeout:        readTimeout,
 			WriteTimeout:       writeTimeout,
-			CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"),
+			CORSAllowedOrigins: getCORSAllowedOrigins(),
 		},
 		Database: DatabaseConfig{
 			URL:      getEnv("DATABASE_URL", "postgres://localhost:5432/webinar?sslmode=disable"),
@@ -220,4 +220,13 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getCORSAllowedOrigins returns CORS_ALLOWED_ORIGINS, or a default that includes production frontend when unset/empty.
+func getCORSAllowedOrigins() string {
+	v := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if v != "" {
+		return v
+	}
+	return "https://webinar.worldcue.news,http://webinar.worldcue.news,http://localhost:3000,http://localhost:3001"
 }
