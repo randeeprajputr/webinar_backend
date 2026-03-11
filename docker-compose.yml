@@ -26,6 +26,13 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_S3_ADS_BUCKET: ${AWS_S3_ADS_BUCKET:-world-cue-news-images}
       AWS_S3_RECORDINGS_BUCKET: ${AWS_S3_RECORDINGS_BUCKET:-world-cue-news-images}
+      SMTP_HOST: ${SMTP_HOST:-email-smtp.ap-south-1.amazonaws.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-AKIA2TLP3X4SWANCFENA}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-BInfk1lpw4xyGCJsMY9C86tA21iewsrkLpyPM3P2xv7T}
+      FROM_EMAIL: ${FROM_EMAIL:-newsify2000@gmail.com}
+      FROM_NAME: ${FROM_NAME:-World Cue News}
+      FRONTEND_URL: ${FRONTEND_URL:-https://webinar.worldcue.news}
     depends_on:
       postgres:
         condition: service_healthy
