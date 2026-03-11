@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/aura-webinar/backend/internal/middleware"
 	"github.com/aura-webinar/backend/internal/models"
@@ -46,12 +47,16 @@ type InviteSpeakerRequest struct {
 
 // Handler handles webinar HTTP endpoints.
 type Handler struct {
-	repo *Repository
+	repo   *Repository
+	logger *zap.Logger
 }
 
 // NewHandler creates a webinar handler.
-func NewHandler(repo *Repository) *Handler {
-	return &Handler{repo: repo}
+func NewHandler(repo *Repository, logger *zap.Logger) *Handler {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &Handler{repo: repo, logger: logger}
 }
 
 // Create handles POST /webinars (admin only).
@@ -159,6 +164,7 @@ func (h *Handler) List(c *gin.Context) {
 	if c.Query("as_speaker") == "1" {
 		list, err := h.repo.ListBySpeakerID(c.Request.Context(), userID)
 		if err != nil {
+			h.logger.Error("list webinars by speaker failed", zap.Error(err))
 			response.Internal(c, "failed to list webinars")
 			return
 		}
@@ -171,6 +177,18 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	list, err := h.repo.List(c.Request.Context(), createdBy, nil)
 	if err != nil {
+		h.logger.Error("list webinars failed", zap.Error(err))
+		response.Internal(c, "failed to list webinars")
+		return
+	}
+	response.OK(c, list)
+}
+
+// ListPublic handles GET /webinars/list (no auth). Returns all webinars for the audience "Join webinar" page.
+func (h *Handler) ListPublic(c *gin.Context) {
+	list, err := h.repo.List(c.Request.Context(), nil, nil)
+	if err != nil {
+		h.logger.Error("list webinars (public) failed", zap.Error(err))
 		response.Internal(c, "failed to list webinars")
 		return
 	}

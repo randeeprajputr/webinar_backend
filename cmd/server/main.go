@@ -107,7 +107,7 @@ func main() {
 
 	// Webinars
 	webinarRepo := webinars.NewRepository(pool)
-	webinarHandler := webinars.NewHandler(webinarRepo)
+	webinarHandler := webinars.NewHandler(webinarRepo, logger)
 
 	// Speaker invitations
 	speakerInviteRepo := speakerinvites.NewRepository(pool)
@@ -218,6 +218,7 @@ func main() {
 	router.GET("/health", func(c *gin.Context) { response.OK(c, gin.H{"status": "ok"}) })
 
 	// Public: webinar details (for registration page), registration, token validation
+	router.GET("/webinars/list", webinarHandler.ListPublic)
 	router.GET("/webinars/:id", webinarHandler.GetByID)
 	router.POST("/webinars/:id/register", registrationHandler.Register)
 	router.POST("/webinars/:id/register/upload", registrationHandler.UploadFile)
