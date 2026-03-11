@@ -41,6 +41,22 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Poll, e
 	return &p, nil
 }
 
+// GetActiveByWebinar returns the latest launched-and-open poll for a webinar.
+func (r *Repository) GetActiveByWebinar(ctx context.Context, webinarID uuid.UUID) (*models.Poll, error) {
+	const query = `SELECT id, webinar_id, question, option_a, option_b, option_c, option_d, launched, closed, created_at
+		FROM polls
+		WHERE webinar_id = $1 AND launched = TRUE AND closed = FALSE
+		ORDER BY created_at DESC
+		LIMIT 1`
+	var p models.Poll
+	err := r.pool.QueryRow(ctx, query, webinarID).
+		Scan(&p.ID, &p.WebinarID, &p.Question, &p.OptionA, &p.OptionB, &p.OptionC, &p.OptionD, &p.Launched, &p.Closed, &p.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // Launch sets poll launched to true.
 func (r *Repository) Launch(ctx context.Context, id uuid.UUID) error {
 	const query = `UPDATE polls SET launched = TRUE WHERE id = $1`

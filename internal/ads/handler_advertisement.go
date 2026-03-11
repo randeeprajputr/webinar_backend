@@ -104,10 +104,10 @@ func (h *AdvertisementHandler) GenerateUploadURL(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"upload_url":  url,
-		"s3_key":      key,
+		"upload_url":   url,
+		"s3_key":       key,
 		"content_type": contentType,
-		"expires_in":  int(expire.Seconds()),
+		"expires_in":   int(expire.Seconds()),
 	})
 }
 
@@ -235,6 +235,16 @@ func (h *AdvertisementHandler) CreateAdvertisement(c *gin.Context) {
 	_, _ = h.adRepo.GetOrCreatePlaylist(c.Request.Context(), webinarID, 30)
 	if h.rotators != nil {
 		h.rotators.Reload(webinarID)
+	}
+	if h.hub != nil && a.IsActive {
+		// Immediately sync newly created active ad to connected clients.
+		h.hub.BroadcastToWebinarAndPublish(a.WebinarID, "ad_changed", map[string]interface{}{
+			"id":       a.ID,
+			"ad_id":    a.ID,
+			"file_url": a.FileURL,
+			"type":     a.FileType,
+			"active":   true,
+		})
 	}
 
 	response.Created(c, a)

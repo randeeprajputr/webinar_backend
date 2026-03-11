@@ -3,6 +3,7 @@ package polls
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/aura-webinar/backend/internal/middleware"
 	"github.com/aura-webinar/backend/internal/models"
@@ -29,14 +30,33 @@ type AnswerRequest struct {
 
 // Handler handles poll HTTP endpoints.
 type Handler struct {
-	repo       *Repository
+	repo        *Repository
 	webinarRepo *webinars.Repository
-	hub        *realtime.Hub
+	hub         *realtime.Hub
 }
 
 // NewHandler creates a polls handler.
 func NewHandler(repo *Repository, webinarRepo *webinars.Repository, hub *realtime.Hub) *Handler {
 	return &Handler{repo: repo, webinarRepo: webinarRepo, hub: hub}
+}
+
+// GetActiveByWebinar handles GET /webinars/:id/polls/active.
+func (h *Handler) GetActiveByWebinar(c *gin.Context) {
+	webinarID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "invalid webinar id")
+		return
+	}
+	p, err := h.repo.GetActiveByWebinar(c.Request.Context(), webinarID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			response.OK(c, nil)
+			return
+		}
+		response.Internal(c, "failed to load poll")
+		return
+	}
+	response.OK(c, p)
 }
 
 // Create handles POST /webinars/:id/polls (speaker/admin).

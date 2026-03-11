@@ -19,19 +19,19 @@ import (
 	"github.com/aura-webinar/backend/internal/ads"
 	"github.com/aura-webinar/backend/internal/analytics"
 	"github.com/aura-webinar/backend/internal/auth"
+	"github.com/aura-webinar/backend/internal/certificates"
 	"github.com/aura-webinar/backend/internal/emaillogs"
+	"github.com/aura-webinar/backend/internal/feedback"
 	"github.com/aura-webinar/backend/internal/middleware"
+	"github.com/aura-webinar/backend/internal/organizations"
 	"github.com/aura-webinar/backend/internal/polls"
 	"github.com/aura-webinar/backend/internal/questions"
-	"github.com/aura-webinar/backend/internal/organizations"
-	"github.com/aura-webinar/backend/internal/recorder"
 	"github.com/aura-webinar/backend/internal/realtime"
-	"github.com/aura-webinar/backend/internal/certificates"
-	"github.com/aura-webinar/backend/internal/feedback"
+	"github.com/aura-webinar/backend/internal/recorder"
 	"github.com/aura-webinar/backend/internal/recordings"
+	"github.com/aura-webinar/backend/internal/registrations"
 	"github.com/aura-webinar/backend/internal/sessionlog"
 	"github.com/aura-webinar/backend/internal/speakerinvites"
-	"github.com/aura-webinar/backend/internal/registrations"
 	"github.com/aura-webinar/backend/internal/streams"
 	"github.com/aura-webinar/backend/internal/waitlist"
 	"github.com/aura-webinar/backend/internal/webinars"
@@ -187,7 +187,9 @@ func main() {
 			}
 			_ = registrationRepo.MarkAttended(ctx, reg.ID)
 		},
-		func(webinarID, userID uuid.UUID, joinedAt time.Time) { _ = sessionLogRepo.LogLeave(context.Background(), webinarID, userID, joinedAt) },
+		func(webinarID, userID uuid.UUID, joinedAt time.Time) {
+			_ = sessionLogRepo.LogLeave(context.Background(), webinarID, userID, joinedAt)
+		},
 	)
 
 	// Analytics (admin or webinar org access)
@@ -276,6 +278,7 @@ func main() {
 
 		// Polls
 		api.POST("/webinars/:id/polls", middleware.RequireRole("admin", "speaker"), pollHandler.Create)
+		api.GET("/webinars/:id/polls/active", pollHandler.GetActiveByWebinar)
 		api.POST("/polls/:id/launch", middleware.RequireRole("admin", "speaker"), pollHandler.Launch)
 		api.POST("/polls/:id/close", middleware.RequireRole("admin", "speaker"), pollHandler.Close)
 		api.POST("/polls/:id/answer", pollHandler.Answer)
