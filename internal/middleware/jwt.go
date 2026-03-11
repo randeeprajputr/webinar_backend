@@ -44,3 +44,28 @@ func JWT(jwtService *auth.JWTService) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// OptionalJWT parses JWT if present and sets user in context; does not require or abort.
+func OptionalJWT(jwtService *auth.JWTService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" {
+			c.Next()
+			return
+		}
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.Next()
+			return
+		}
+		claims, err := jwtService.Validate(parts[1])
+		if err != nil {
+			c.Next()
+			return
+		}
+		c.Set(ContextUserID, claims.UserID)
+		c.Set(ContextUserRole, claims.Role)
+		c.Set(ContextUserEmail, claims.Email)
+		c.Next()
+	}
+}

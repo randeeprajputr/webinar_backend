@@ -8,9 +8,12 @@ import (
 
 // EmailType for automation.
 const (
+	EmailTypeEmailVerification       = "email_verification"
+	EmailTypeSpeakerInvitation       = "speaker_invitation"
 	EmailTypeRegistrationConfirmation = "registration_confirmation"
 	EmailTypeReminder24h              = "reminder_24h"
 	EmailTypeReminder1h               = "reminder_1h"
+	EmailTypeReminder10m              = "reminder_10m"
 	EmailTypeThankYou                 = "thank_you"
 	EmailTypeReplayAccess             = "replay_access"
 )

@@ -9,10 +9,11 @@ import (
 
 // FormFieldConfig is one field in the audience registration form (admin-defined).
 type FormFieldConfig struct {
-	ID       string `json:"id"`       // key for storing response, e.g. "company"
-	Label    string `json:"label"`    // display label, e.g. "Company name"
-	Type     string `json:"type"`    // "text", "email", "number", "textarea"
-	Required bool   `json:"required"`
+	ID       string   `json:"id"`       // key for storing response, e.g. "company"
+	Label    string   `json:"label"`    // display label, e.g. "Company name"
+	Type     string   `json:"type"`     // "text", "email", "number", "textarea", "dropdown", "checkbox", "radio", "date", "file"
+	Required bool     `json:"required"`
+	Options  []string `json:"options,omitempty"` // for dropdown and radio: option labels
 }
 
 // Webinar represents a webinar session.
@@ -27,6 +28,9 @@ type Webinar struct {
 	IsPaid             bool            `json:"is_paid"`
 	TicketPriceCents   int             `json:"ticket_price_cents"`
 	TicketCurrency     string          `json:"ticket_currency"`
+	MaxAudience        *int            `json:"max_audience,omitempty"` // nil = unlimited
+	Category           string          `json:"category,omitempty"`
+	BannerImageURL     string          `json:"banner_image_url,omitempty"`
 	AudienceFormConfig json.RawMessage `json:"audience_form_config,omitempty"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`

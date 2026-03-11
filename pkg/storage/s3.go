@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/google/uuid"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -21,10 +22,14 @@ import (
 const (
 	// MaxAdFileSize is the maximum allowed file size for ad uploads (10MB).
 	MaxAdFileSize = 10 * 1024 * 1024
+	// MaxRegistrationFileSize is the maximum for registration form file uploads (5MB).
+	MaxRegistrationFileSize = 5 * 1024 * 1024
 	// FolderAds is the S3 prefix for ad objects.
 	FolderAds = "ads"
 	// FolderRecordings is the S3 prefix for recording objects.
 	FolderRecordings = "recordings"
+	// FolderRegistration is the S3 prefix for registration form file uploads.
+	FolderRegistration = "registration"
 )
 
 // Allowed ad MIME types and extensions.
@@ -131,6 +136,60 @@ func ContentTypeForFilename(filename string) string {
 // AdKey returns the S3 object key for an ad: ads/{webinar_id}/{filename}.
 func AdKey(webinarID, filename string) string {
 	return path.Join(FolderAds, webinarID, path.Base(filename))
+}
+
+// Allowed registration file types (PDF, DOC, DOCX, images).
+var (
+	AllowedRegistrationTypes = map[string]string{
+		"image/jpeg":        ".jpg",
+		"image/jpg":         ".jpg",
+		"image/png":         ".png",
+		"image/webp":        ".webp",
+		"image/gif":         ".gif",
+		"application/pdf":   ".pdf",
+		"application/msword": ".doc",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+	}
+	AllowedRegistrationExtensions = map[string]string{
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".webp": "image/webp",
+		".gif":  "image/gif",
+		".pdf":  "application/pdf",
+		".doc":  "application/msword",
+		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	}
+)
+
+// ValidateRegistrationFileType returns true if the file type is allowed for registration uploads.
+func ValidateRegistrationFileType(contentType, filename string) bool {
+	ext := strings.ToLower(path.Ext(filename))
+	if contentType != "" {
+		if _, ok := AllowedRegistrationTypes[strings.ToLower(contentType)]; ok {
+			return true
+		}
+	}
+	if ext != "" {
+		if _, ok := AllowedRegistrationExtensions[ext]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// ContentTypeForRegistrationFilename returns MIME type for registration file extensions.
+func ContentTypeForRegistrationFilename(filename string) string {
+	ext := strings.ToLower(path.Ext(filename))
+	if ct, ok := AllowedRegistrationExtensions[ext]; ok {
+		return ct
+	}
+	return "application/octet-stream"
+}
+
+// RegistrationKey returns the S3 object key: registration/{webinar_id}/{uuid}_{filename}.
+func RegistrationKey(webinarID, filename string) string {
+	return path.Join(FolderRegistration, webinarID, uuid.New().String()+"_"+path.Base(filename))
 }
 
 // RecordingKey returns the S3 object key: recordings/{webinar_id}/{recording_id}.mp4.

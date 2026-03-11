@@ -114,3 +114,18 @@ func (r *Repository) MarkTokenUsed(ctx context.Context, tokenID uuid.UUID) error
 func (r *Repository) GetByRegistrationID(ctx context.Context, id uuid.UUID) (*models.Registration, error) {
 	return r.GetRegistrationByID(ctx, id)
 }
+
+// GetLatestTokenForRegistration returns the most recent valid (non-expired) token for a registration.
+func (r *Repository) GetLatestTokenForRegistration(ctx context.Context, registrationID uuid.UUID) (*models.RegistrationToken, error) {
+	const q = `SELECT id, registration_id, token, expires_at, used_at, created_at
+		FROM registration_tokens
+		WHERE registration_id = $1 AND expires_at > NOW()
+		ORDER BY created_at DESC
+		LIMIT 1`
+	var t models.RegistrationToken
+	err := r.pool.QueryRow(ctx, q, registrationID).Scan(&t.ID, &t.RegistrationID, &t.Token, &t.ExpiresAt, &t.UsedAt, &t.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}

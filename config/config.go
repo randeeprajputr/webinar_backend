@@ -52,6 +52,7 @@ type EmailConfig struct {
 	SMTPUser    string
 	SMTPPass    string
 	APIKey      string // optional e.g. SendGrid
+	FrontendURL string // base URL for join links in emails
 }
 
 // RecordingConfig holds in-app recording (speaker view) settings.
@@ -181,13 +182,14 @@ func Load() (*Config, error) {
 			WebhookSecret: getEnv("RAZORPAY_WEBHOOK_SECRET", ""),
 		},
 		Email: EmailConfig{
-			FromAddress: getEnv("EMAIL_FROM_ADDRESS", "noreply@example.com"),
-			FromName:    getEnv("EMAIL_FROM_NAME", "Aura Webinar"),
+			FromAddress: getEnv("FROM_EMAIL", getEnv("EMAIL_FROM_ADDRESS", "noreply@example.com")),
+			FromName:    getEnv("FROM_NAME", getEnv("EMAIL_FROM_NAME", "Aura Webinar")),
 			SMTPHost:    getEnv("SMTP_HOST", ""),
 			SMTPPort:    getEnvInt("SMTP_PORT", 587),
 			SMTPUser:    getEnv("SMTP_USER", ""),
-			SMTPPass:    getEnv("SMTP_PASS", ""),
+			SMTPPass:    getEnv("SMTP_PASSWORD", getEnv("SMTP_PASS", "")),
 			APIKey:      getEnv("EMAIL_API_KEY", ""),
+			FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 		},
 	}
 	return cfg, nil

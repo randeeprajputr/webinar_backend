@@ -19,11 +19,14 @@ func parseTime(s string) (time.Time, error) {
 
 // CreateRequest is the body for POST /webinars.
 type CreateRequest struct {
-	Title       string    `json:"title" binding:"required"`
-	Description string    `json:"description"`
-	StartsAt    string    `json:"starts_at" binding:"required"`
-	EndsAt      *string   `json:"ends_at"`
-	SpeakerIDs  []string  `json:"speaker_ids"` // optional; platform user IDs to add as speakers
+	Title           string   `json:"title" binding:"required"`
+	Description     string   `json:"description"`
+	StartsAt        string   `json:"starts_at" binding:"required"`
+	EndsAt          *string  `json:"ends_at"`
+	SpeakerIDs      []string `json:"speaker_ids"`      // optional; platform user IDs to add as speakers
+	MaxAudience     *int     `json:"max_audience"`     // optional; nil = unlimited
+	Category        string   `json:"category"`
+	BannerImageURL  string   `json:"banner_image_url"`
 }
 
 // AddSpeakerRequest is the body for POST /webinars/:id/speakers.
@@ -34,6 +37,11 @@ type AddSpeakerRequest struct {
 // UpdateRegistrationFormRequest is the body for PUT /webinars/:id/registration-form.
 type UpdateRegistrationFormRequest struct {
 	AudienceFormConfig []models.FormFieldConfig `json:"audience_form_config"`
+}
+
+// InviteSpeakerRequest is the body for POST /webinars/:id/speakers/invite.
+type InviteSpeakerRequest struct {
+	Email string `json:"email" binding:"required,email"`
 }
 
 // Handler handles webinar HTTP endpoints.
@@ -72,11 +80,14 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	w := &models.Webinar{
-		Title:       req.Title,
-		Description: req.Description,
-		StartsAt:    startsAt,
-		EndsAt:      endsAt,
-		CreatedBy:   userID,
+		Title:          req.Title,
+		Description:    req.Description,
+		StartsAt:       startsAt,
+		EndsAt:         endsAt,
+		CreatedBy:      userID,
+		MaxAudience:    req.MaxAudience,
+		Category:       req.Category,
+		BannerImageURL: req.BannerImageURL,
 	}
 	if err := h.repo.Create(c.Request.Context(), w); err != nil {
 		response.Internal(c, "failed to create webinar")
@@ -184,10 +195,13 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Title       *string `json:"title"`
-		Description *string `json:"description"`
-		StartsAt    *string `json:"starts_at"`
-		EndsAt      *string `json:"ends_at"`
+		Title           *string `json:"title"`
+		Description     *string `json:"description"`
+		StartsAt        *string `json:"starts_at"`
+		EndsAt          *string `json:"ends_at"`
+		MaxAudience     *int    `json:"max_audience"`
+		Category        *string `json:"category"`
+		BannerImageURL  *string `json:"banner_image_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
@@ -217,7 +231,18 @@ func (h *Handler) Update(c *gin.Context) {
 		}
 		endsAt = &t
 	}
-	if err := h.repo.Update(c.Request.Context(), id, title, desc, startsAt, endsAt); err != nil {
+	maxAudience := req.MaxAudience
+	if req.MaxAudience != nil && *req.MaxAudience < 0 {
+		maxAudience = nil // treat negative as unlimited
+	}
+	category, bannerURL := w.Category, w.BannerImageURL
+	if req.Category != nil {
+		category = *req.Category
+	}
+	if req.BannerImageURL != nil {
+		bannerURL = *req.BannerImageURL
+	}
+	if err := h.repo.Update(c.Request.Context(), id, title, desc, startsAt, endsAt, maxAudience, category, bannerURL); err != nil {
 		response.Internal(c, "failed to update webinar")
 		return
 	}

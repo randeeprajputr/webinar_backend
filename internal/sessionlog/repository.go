@@ -51,6 +51,14 @@ type WatchTimeAggregates struct {
 	DistinctUsers     int
 }
 
+// GetTotalWatchSecondsByUser returns sum of watch_seconds for a user in a webinar.
+func (r *Repository) GetTotalWatchSecondsByUser(ctx context.Context, webinarID, userID uuid.UUID) (int64, error) {
+	const q = `SELECT COALESCE(SUM(watch_seconds), 0) FROM user_session_logs WHERE webinar_id = $1 AND user_id = $2 AND left_at IS NOT NULL`
+	var total int64
+	err := r.pool.QueryRow(ctx, q, webinarID, userID).Scan(&total)
+	return total, err
+}
+
 // GetWatchTimeAggregates returns total watch time and distinct user count from session logs for analytics.
 func (r *Repository) GetWatchTimeAggregates(ctx context.Context, webinarID uuid.UUID) (*WatchTimeAggregates, error) {
 	const q = `SELECT COALESCE(SUM(watch_seconds), 0), COUNT(DISTINCT user_id) FROM user_session_logs WHERE webinar_id = $1 AND left_at IS NOT NULL`

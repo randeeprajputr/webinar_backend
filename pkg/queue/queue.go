@@ -44,12 +44,18 @@ type RecordingUploadPayload struct {
 
 // EmailPayload is the payload for email jobs.
 type EmailPayload struct {
-	EmailType      string    `json:"email_type"`
-	WebinarID      uuid.UUID `json:"webinar_id"`
-	RegistrationID uuid.UUID `json:"registration_id"`
-	RecipientEmail string    `json:"recipient_email"`
-	Subject        string    `json:"subject"`
-	BodyHTML       string    `json:"body_html"`
+	EmailType       string    `json:"email_type"`
+	WebinarID       uuid.UUID `json:"webinar_id"`
+	RegistrationID  uuid.UUID `json:"registration_id"`
+	RecipientEmail  string    `json:"recipient_email"`
+	RecipientName   string    `json:"recipient_name"`
+	WebinarTitle    string    `json:"webinar_title"`
+	WebinarStartsAt string    `json:"webinar_starts_at"`
+	JoinURL         string    `json:"join_url"`
+	VerifyURL       string    `json:"verify_url"`
+	InviteURL       string    `json:"invite_url"` // for speaker invitation
+	Subject         string    `json:"subject"`
+	BodyHTML        string    `json:"body_html"`
 }
 
 // AnalyticsPayload is the payload for analytics processing jobs.
@@ -173,6 +179,26 @@ func (q *Queue) Dequeue(ctx context.Context) (*Job, string, error) {
 	return &job, result[0], nil
 }
 
+// DequeueEmail blocks until an email job is available or ctx is done.
+func (q *Queue) DequeueEmail(ctx context.Context) (*Job, string, error) {
+	result, err := q.client.BLPop(ctx, 0, QueueEmails).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	if len(result) < 2 {
+		return nil, "", nil
+	}
+	var job Job
+	if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
+		q.logger.Warn("invalid email job payload", zap.String("raw", result[1]), zap.Error(err))
+		return nil, "", nil
+	}
+	return &job, result[0], nil
+}
+
 // Retry re-enqueues a job with incremented attempt. If attempt >= MaxRetries, pushes to DLQ instead.
 func (q *Queue) Retry(ctx context.Context, job *Job) error {
 	job.Attempt++
@@ -192,5 +218,27 @@ func (q *Queue) Retry(ctx context.Context, job *Job) error {
 		return err
 	}
 	q.logger.Info("job retried", zap.String("job_id", job.ID), zap.Int("attempt", job.Attempt))
+	return nil
+}
+
+// RetryEmail re-enqueues an email job with incremented attempt.
+func (q *Queue) RetryEmail(ctx context.Context, job *Job) error {
+	job.Attempt++
+	raw, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	if job.Attempt >= MaxRetries {
+		if err := q.client.RPush(ctx, QueueDLQ, raw).Err(); err != nil {
+			q.logger.Error("dlq push failed", zap.Error(err), zap.String("job_id", job.ID))
+			return err
+		}
+		q.logger.Warn("email job moved to DLQ", zap.String("job_id", job.ID), zap.Int("attempt", job.Attempt))
+		return nil
+	}
+	if err := q.client.RPush(ctx, QueueEmails, raw).Err(); err != nil {
+		return err
+	}
+	q.logger.Info("email job retried", zap.String("job_id", job.ID), zap.Int("attempt", job.Attempt))
 	return nil
 }

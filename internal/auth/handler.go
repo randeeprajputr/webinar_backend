@@ -1,12 +1,17 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/aura-webinar/backend/internal/models"
+	"github.com/aura-webinar/backend/pkg/queue"
 	"github.com/aura-webinar/backend/pkg/response"
 	"github.com/aura-webinar/backend/pkg/utils"
 )
@@ -38,14 +43,22 @@ type TokenResponse struct {
 
 // Handler handles auth HTTP endpoints.
 type Handler struct {
-	repo   *Repository
-	jwt    *JWTService
-	logger *zap.Logger
+	repo         *Repository
+	jwt          *JWTService
+	jobQueue     *queue.Queue
+	frontendURL  string
+	logger       *zap.Logger
 }
 
 // NewHandler creates an auth handler.
 func NewHandler(repo *Repository, jwt *JWTService, logger *zap.Logger) *Handler {
 	return &Handler{repo: repo, jwt: jwt, logger: logger}
+}
+
+// SetEmailQueue configures the job queue and frontend URL for verification emails.
+func (h *Handler) SetEmailQueue(q *queue.Queue, frontendURL string) {
+	h.jobQueue = q
+	h.frontendURL = frontendURL
 }
 
 // Register handles POST /auth/register.
@@ -77,6 +90,10 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	// First user (bootstrap) gets verified immediately - no verification email
+	list, _ := h.repo.List(c.Request.Context())
+	skipVerification := len(list) == 0
+
 	hash, err := utils.HashPassword(req.Password)
 	if err != nil {
 		response.Internal(c, "failed to hash password")
@@ -90,19 +107,53 @@ func (h *Handler) Register(c *gin.Context) {
 		Designation:  req.Designation,
 		Institution:  req.Institution,
 	}
-	user, err := h.repo.Create(c.Request.Context(), req.Email, hash, req.FullName, role, profile)
+	user, err := h.repo.Create(c.Request.Context(), req.Email, hash, req.FullName, role, profile, skipVerification)
 	if err != nil {
 		response.Internal(c, "failed to create user")
 		return
 	}
 
-	token, err := h.jwt.Generate(user.ID, user.Email, string(user.Role))
-	if err != nil {
-		response.Internal(c, "failed to generate token")
+	if skipVerification {
+		// First user: log in immediately
+		token, err := h.jwt.Generate(user.ID, user.Email, string(user.Role))
+		if err != nil {
+			response.Internal(c, "failed to generate token")
+			return
+		}
+		response.Created(c, TokenResponse{Token: token, User: user.ToPublic()})
 		return
 	}
 
-	response.Created(c, TokenResponse{Token: token, User: user.ToPublic()})
+	// Generate verification token and send email
+	verifyToken, err := generateVerificationToken()
+	if err != nil {
+		response.Internal(c, "failed to generate verification token")
+		return
+	}
+	expiresAt := time.Now().Add(24 * time.Hour)
+	if err := h.repo.SetVerificationToken(c.Request.Context(), user.ID, verifyToken, expiresAt); err != nil {
+		h.logger.Warn("set verification token failed", zap.Error(err))
+	}
+	if h.jobQueue != nil && h.frontendURL != "" {
+		verifyURL := h.frontendURL + "/auth/verify?token=" + verifyToken
+		payload := queue.EmailPayload{
+			EmailType:      models.EmailTypeEmailVerification,
+			WebinarID:      uuid.Nil,
+			RegistrationID: uuid.Nil,
+			RecipientEmail: req.Email,
+			RecipientName:  req.FullName,
+			VerifyURL:      verifyURL,
+			Subject:        "Verify your email address",
+		}
+		if err := h.jobQueue.EnqueueEmail(c.Request.Context(), payload); err != nil {
+			h.logger.Warn("enqueue verification email failed", zap.Error(err))
+		}
+	}
+
+	response.Created(c, gin.H{
+		"message": "Registration successful. Please check your email to verify your account.",
+		"user":    user.ToPublic(),
+	})
 }
 
 // Login handles POST /auth/login.
@@ -123,6 +174,10 @@ func (h *Handler) Login(c *gin.Context) {
 		response.Unauthorized(c, "invalid email or password")
 		return
 	}
+	if !user.EmailVerified {
+		response.Unauthorized(c, "please verify your email before logging in")
+		return
+	}
 
 	token, err := h.jwt.Generate(user.ID, user.Email, string(user.Role))
 	if err != nil {
@@ -133,6 +188,25 @@ func (h *Handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, response.Body{Success: true, Data: TokenResponse{Token: token, User: user.ToPublic()}})
 }
 
+// VerifyEmail handles GET /auth/verify-email?token=X. Activates account and redirects to login.
+func (h *Handler) VerifyEmail(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		response.BadRequest(c, "token required")
+		return
+	}
+	user, err := h.repo.VerifyByToken(c.Request.Context(), token)
+	if err != nil || user == nil {
+		response.BadRequest(c, "invalid or expired verification link")
+		return
+	}
+	// Return success; frontend can redirect to login
+	response.OK(c, gin.H{
+		"message": "Email verified successfully. You can now log in.",
+		"user":    user.ToPublic(),
+	})
+}
+
 // List handles GET /users (admin only). Returns platform users for e.g. speaker assignment.
 func (h *Handler) List(c *gin.Context) {
 	list, err := h.repo.List(c.Request.Context())
@@ -141,4 +215,12 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.Body{Success: true, Data: list})
+}
+
+func generateVerificationToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b)[:43], nil
 }

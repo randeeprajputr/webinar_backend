@@ -1,0 +1,2 @@
+-- Certificate generation: no new tables; we use registrations + session logs.
+-- Attendance rule: attended_at set AND total watch_seconds >= 2400 (40 min).

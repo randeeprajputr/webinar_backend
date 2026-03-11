@@ -26,10 +26,14 @@ import (
 	"github.com/aura-webinar/backend/internal/organizations"
 	"github.com/aura-webinar/backend/internal/recorder"
 	"github.com/aura-webinar/backend/internal/realtime"
+	"github.com/aura-webinar/backend/internal/certificates"
+	"github.com/aura-webinar/backend/internal/feedback"
 	"github.com/aura-webinar/backend/internal/recordings"
 	"github.com/aura-webinar/backend/internal/sessionlog"
+	"github.com/aura-webinar/backend/internal/speakerinvites"
 	"github.com/aura-webinar/backend/internal/registrations"
 	"github.com/aura-webinar/backend/internal/streams"
+	"github.com/aura-webinar/backend/internal/waitlist"
 	"github.com/aura-webinar/backend/internal/webinars"
 	"github.com/aura-webinar/backend/internal/worker"
 	"github.com/aura-webinar/backend/internal/zego"
@@ -66,6 +70,8 @@ func main() {
 	}
 	defer rdb.Close()
 
+	jobQueue := queue.NewQueue(rdb.Client, logger)
+
 	var s3Client *storage.S3
 	if cfg.AWS.Region != "" {
 		s3Cfg := storage.S3Config{
@@ -97,10 +103,16 @@ func main() {
 	// Auth
 	authRepo := auth.NewRepository(pool)
 	authHandler := auth.NewHandler(authRepo, jwtService, logger)
+	authHandler.SetEmailQueue(jobQueue, cfg.Email.FrontendURL)
 
 	// Webinars
 	webinarRepo := webinars.NewRepository(pool)
 	webinarHandler := webinars.NewHandler(webinarRepo)
+
+	// Speaker invitations
+	speakerInviteRepo := speakerinvites.NewRepository(pool)
+	speakerInviteHandler := speakerinvites.NewHandler(speakerInviteRepo, webinarRepo, authRepo, jwtService, logger)
+	speakerInviteHandler.SetEmailQueue(jobQueue, cfg.Email.FrontendURL)
 	zegoHandler := zego.NewHandler(webinarRepo, cfg.Zego, logger)
 
 	// Organizations (Phase 2)
@@ -109,7 +121,14 @@ func main() {
 
 	// Registrations (Phase 2)
 	registrationRepo := registrations.NewRepository(pool)
+	waitlistRepo := waitlist.NewRepository(pool)
 	registrationHandler := registrations.NewHandler(registrationRepo, webinarRepo, logger)
+	registrationHandler.SetAuth(authRepo, jwtService)
+	registrationHandler.SetEmailQueue(jobQueue, cfg.Email.FrontendURL)
+	registrationHandler.SetWaitlist(waitlistRepo)
+	if s3Client != nil {
+		registrationHandler.SetS3(s3Client)
+	}
 
 	// Questions
 	questionRepo := questions.NewRepository(pool)
@@ -131,7 +150,6 @@ func main() {
 	// Recordings
 	recordingRepo := recordings.NewRepository(pool)
 	recordingHandler := recordings.NewHandler(recordingRepo, webinarRepo, s3Client, logger)
-	jobQueue := queue.NewQueue(rdb.Client, logger)
 	recordingWebhook := recordings.NewWebhookHandler(recordingRepo, jobQueue, logger)
 	recordingProcessor := worker.NewRecordingProcessor(recordingRepo, s3Client, jobQueue, logger)
 
@@ -175,6 +193,11 @@ func main() {
 	// Analytics (admin or webinar org access)
 	analyticsHandler := analytics.NewHandler(pool, registrationRepo, questionRepo, streamRepo, webinarRepo, sessionLogRepo)
 
+	// Feedback (attendees submit; admin/speaker view)
+	feedbackRepo := feedback.NewRepository(pool)
+	feedbackHandler := feedback.NewHandler(feedbackRepo, webinarRepo, registrationRepo, authRepo)
+	certificateHandler := certificates.NewHandler(webinarRepo, registrationRepo, sessionLogRepo, authRepo)
+
 	emailLogsRepo := emaillogs.NewRepository(pool)
 	emailLogsHandler := emaillogs.NewHandler(emailLogsRepo)
 
@@ -194,8 +217,13 @@ func main() {
 	// Health
 	router.GET("/health", func(c *gin.Context) { response.OK(c, gin.H{"status": "ok"}) })
 
-	// Public: webinar registration and token validation (Phase 2)
+	// Public: webinar details (for registration page), registration, token validation
+	router.GET("/webinars/:id", webinarHandler.GetByID)
 	router.POST("/webinars/:id/register", registrationHandler.Register)
+	router.POST("/webinars/:id/register/upload", registrationHandler.UploadFile)
+	router.POST("/webinars/:id/feedback", middleware.OptionalJWT(jwtService), feedbackHandler.Submit)
+	router.GET("/webinars/:id/certificate/validate", certificateHandler.ValidateCertificate)
+	router.GET("/webinars/:id/certificate", certificateHandler.CertificateHTML)
 	router.GET("/registrations/:token/validate", registrationHandler.ValidateToken)
 
 	// Auth (public)
@@ -203,6 +231,10 @@ func main() {
 	{
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/register", authHandler.Register)
+		authGroup.GET("/verify-email", authHandler.VerifyEmail)
+		authGroup.POST("/exchange-token", registrationHandler.ExchangeToken)
+		router.GET("/auth/speaker-invite/validate", speakerInviteHandler.GetInviteByToken)
+		router.POST("/auth/speaker-invite/accept", speakerInviteHandler.AcceptInvite)
 	}
 
 	// Protected API (JWT required)
@@ -218,10 +250,9 @@ func main() {
 		api.POST("/organizations/join", orgHandler.JoinOrganization)
 		api.GET("/organizations/:id/members", orgHandler.ListMembers)
 
-		// Webinars
+		// Webinars (GET /webinars/:id is public, for registration page)
 		api.GET("/webinars", webinarHandler.List)
 		api.POST("/webinars", middleware.RequireRole("admin"), webinarHandler.Create)
-		api.GET("/webinars/:id", webinarHandler.GetByID)
 		api.GET("/webinars/:id/analytics", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), analyticsHandler.GetByWebinar)
 		api.GET("/webinars/:id/emails", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), emailLogsHandler.ListByWebinar)
 		api.POST("/webinars/:id/emails/resend", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), emailLogsHandler.Resend)
@@ -229,8 +260,10 @@ func main() {
 		api.PUT("/webinars/:id/registration-form", webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), webinarHandler.UpdateRegistrationForm)
 		api.DELETE("/webinars/:id", webinarHandler.Delete)
 		api.POST("/webinars/:id/speakers", middleware.RequireRole("admin", "speaker"), webinarHandler.AddSpeaker)
+		api.POST("/webinars/:id/speakers/invite", middleware.RequireRole("admin", "speaker"), speakerInviteHandler.Invite)
 		api.GET("/webinars/:id/audience_count", webinarHandler.AudienceCount(hub))
 		api.GET("/webinars/:id/attendees", middleware.RequireRole("admin", "speaker"), sessionLogHandler.GetAttendees)
+		api.GET("/webinars/:id/feedback", middleware.RequireRole("admin", "speaker"), webinars.RequireWebinarOrgAccess(webinarRepo, orgRepo), feedbackHandler.List)
 		api.GET("/webinars/:id/zego-token", zegoHandler.GetToken)
 
 		// Questions
@@ -282,13 +315,20 @@ func main() {
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 	}
 
-	// Background worker (recording upload to S3)
+	// Background workers (recording upload to S3, email sending)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 	if s3Client != nil {
 		go recordingProcessor.Run(workerCtx)
 		logger.Info("recording worker started")
 	}
+	emailProcessor := worker.NewEmailProcessor(emailLogsRepo, jobQueue, cfg.Email, logger)
+	go emailProcessor.Run(workerCtx)
+	logger.Info("email worker started")
+
+	reminderScheduler := worker.NewReminderScheduler(webinarRepo, registrationRepo, emailLogsRepo, jobQueue, cfg.Email.FrontendURL, logger)
+	go reminderScheduler.Run(workerCtx)
+	logger.Info("reminder scheduler started")
 
 	go func() {
 		logger.Info("server listening", zap.String("port", cfg.Server.Port))

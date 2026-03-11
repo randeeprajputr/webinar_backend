@@ -22,19 +22,19 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 // Create inserts a new webinar.
 func (r *Repository) Create(ctx context.Context, w *models.Webinar) error {
-	const q = `INSERT INTO webinars (id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
+	const q = `INSERT INTO webinars (id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, max_audience, category, banner_image_url)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at, updated_at`
-	return r.pool.QueryRow(ctx, q, w.Title, w.Description, w.StartsAt, w.EndsAt, w.CreatedBy, w.OrganizationID, w.IsPaid, w.TicketPriceCents, w.TicketCurrency).
+	return r.pool.QueryRow(ctx, q, w.Title, w.Description, w.StartsAt, w.EndsAt, w.CreatedBy, w.OrganizationID, w.IsPaid, w.TicketPriceCents, w.TicketCurrency, w.MaxAudience, w.Category, w.BannerImageURL).
 		Scan(&w.ID, &w.CreatedAt, &w.UpdatedAt)
 }
 
 // GetByID returns a webinar by ID.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Webinar, error) {
-	const q = `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, audience_form_config, created_at, updated_at
+	const q = `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, max_audience, category, banner_image_url, audience_form_config, created_at, updated_at
 		FROM webinars WHERE id = $1`
 	var w models.Webinar
-	err := r.pool.QueryRow(ctx, q, id).Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.AudienceFormConfig, &w.CreatedAt, &w.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, id).Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.MaxAudience, &w.Category, &w.BannerImageURL, &w.AudienceFormConfig, &w.CreatedAt, &w.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (r *Repository) AddSpeaker(ctx context.Context, webinarID, userID uuid.UUID
 
 // List returns all webinars, optionally filtered by created_by or organization_id.
 func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizationID *uuid.UUID) ([]models.Webinar, error) {
-	base := `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, created_at, updated_at FROM webinars`
+	base := `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, max_audience, category, banner_image_url, created_at, updated_at FROM webinars`
 	var args []interface{}
 	var cond string
 	if createdBy != nil {
@@ -75,7 +75,7 @@ func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizatio
 	var list []models.Webinar
 	for rows.Next() {
 		var w models.Webinar
-		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.MaxAudience, &w.Category, &w.BannerImageURL, &w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, w)
@@ -85,7 +85,7 @@ func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizatio
 
 // ListBySpeakerID returns webinars where the user is added as a speaker (for speaker dashboard).
 func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]models.Webinar, error) {
-	const q = `SELECT w.id, w.title, w.description, w.starts_at, w.ends_at, w.created_by, w.organization_id, w.is_paid, w.ticket_price_cents, w.ticket_currency, w.created_at, w.updated_at
+	const q = `SELECT w.id, w.title, w.description, w.starts_at, w.ends_at, w.created_by, w.organization_id, w.is_paid, w.ticket_price_cents, w.ticket_currency, w.max_audience, w.category, w.banner_image_url, w.created_at, w.updated_at
 		FROM webinars w
 		INNER JOIN webinar_speakers ws ON ws.webinar_id = w.id AND ws.user_id = $1
 		ORDER BY w.starts_at DESC`
@@ -97,7 +97,7 @@ func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]m
 	var list []models.Webinar
 	for rows.Next() {
 		var w models.Webinar
-		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.MaxAudience, &w.Category, &w.BannerImageURL, &w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, w)
@@ -105,10 +105,10 @@ func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]m
 	return list, rows.Err()
 }
 
-// Update updates webinar fields (title, description, starts_at, ends_at).
-func (r *Repository) Update(ctx context.Context, id uuid.UUID, title, description string, startsAt, endsAt *time.Time) error {
-	const q = `UPDATE webinars SET title = $1, description = $2, starts_at = COALESCE($3, starts_at), ends_at = COALESCE($4, ends_at), updated_at = NOW() WHERE id = $5`
-	_, err := r.pool.Exec(ctx, q, title, description, startsAt, endsAt, id)
+// Update updates webinar fields (title, description, starts_at, ends_at, max_audience, category, banner_image_url).
+func (r *Repository) Update(ctx context.Context, id uuid.UUID, title, description string, startsAt, endsAt *time.Time, maxAudience *int, category, bannerImageURL string) error {
+	const q = `UPDATE webinars SET title = $1, description = $2, starts_at = COALESCE($3, starts_at), ends_at = COALESCE($4, ends_at), max_audience = $5, category = $6, banner_image_url = $7, updated_at = NOW() WHERE id = $8`
+	_, err := r.pool.Exec(ctx, q, title, description, startsAt, endsAt, maxAudience, category, bannerImageURL, id)
 	return err
 }
 
@@ -124,6 +124,28 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	const q = `DELETE FROM webinars WHERE id = $1`
 	_, err := r.pool.Exec(ctx, q, id)
 	return err
+}
+
+// ListStartingInWindow returns webinars whose starts_at falls within the given time window (for reminder scheduling).
+func (r *Repository) ListStartingInWindow(ctx context.Context, windowStart, windowEnd time.Time) ([]models.Webinar, error) {
+	const q = `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, created_at, updated_at
+		FROM webinars
+		WHERE starts_at >= $1 AND starts_at <= $2
+		ORDER BY starts_at ASC`
+	rows, err := r.pool.Query(ctx, q, windowStart, windowEnd)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []models.Webinar
+	for rows.Next() {
+		var w models.Webinar
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, w)
+	}
+	return list, rows.Err()
 }
 
 // IsAdminOrSpeaker returns true if the user created the webinar or is a speaker.
