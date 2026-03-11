@@ -50,8 +50,9 @@ func (r *Repository) AddSpeaker(ctx context.Context, webinarID, userID uuid.UUID
 }
 
 // List returns all webinars, optionally filtered by created_by or organization_id.
+// Uses only columns present in base schema (001+003) so it works before migrations 009/012.
 func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizationID *uuid.UUID) ([]models.Webinar, error) {
-	base := `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, max_audience, category, banner_image_url, created_at, updated_at FROM webinars`
+	base := `SELECT id, title, description, starts_at, ends_at, created_by, organization_id, is_paid, ticket_price_cents, ticket_currency, created_at, updated_at FROM webinars`
 	var args []interface{}
 	var cond string
 	if createdBy != nil {
@@ -75,7 +76,7 @@ func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizatio
 	var list []models.Webinar
 	for rows.Next() {
 		var w models.Webinar
-		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.MaxAudience, &w.Category, &w.BannerImageURL, &w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, w)
@@ -84,8 +85,9 @@ func (r *Repository) List(ctx context.Context, createdBy *uuid.UUID, organizatio
 }
 
 // ListBySpeakerID returns webinars where the user is added as a speaker (for speaker dashboard).
+// Uses only columns present in base schema (001+003) so it works before migrations 009/012.
 func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]models.Webinar, error) {
-	const q = `SELECT w.id, w.title, w.description, w.starts_at, w.ends_at, w.created_by, w.organization_id, w.is_paid, w.ticket_price_cents, w.ticket_currency, w.max_audience, w.category, w.banner_image_url, w.created_at, w.updated_at
+	const q = `SELECT w.id, w.title, w.description, w.starts_at, w.ends_at, w.created_by, w.organization_id, w.is_paid, w.ticket_price_cents, w.ticket_currency, w.created_at, w.updated_at
 		FROM webinars w
 		INNER JOIN webinar_speakers ws ON ws.webinar_id = w.id AND ws.user_id = $1
 		ORDER BY w.starts_at DESC`
@@ -97,7 +99,7 @@ func (r *Repository) ListBySpeakerID(ctx context.Context, userID uuid.UUID) ([]m
 	var list []models.Webinar
 	for rows.Next() {
 		var w models.Webinar
-		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.MaxAudience, &w.Category, &w.BannerImageURL, &w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Title, &w.Description, &w.StartsAt, &w.EndsAt, &w.CreatedBy, &w.OrganizationID, &w.IsPaid, &w.TicketPriceCents, &w.TicketCurrency, &w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, w)
